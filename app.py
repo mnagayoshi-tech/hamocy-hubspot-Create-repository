@@ -75,7 +75,10 @@ def hs_search(token, obj, keyword, props=["name","hs_object_id"], limit=100):
     r = requests.post(f"https://api.hubapi.com/crm/v3/objects/{obj}/search",
         json={"query": keyword, "properties": props, "limit": limit},
         headers=hdr(token))
-    return r.json().get("results",[]) if r.ok else []
+    if not r.ok:
+        st.warning(f"🔴 検索エラー [{obj}]: {r.status_code} - {r.text[:200]}")
+        return []
+    return r.json().get("results",[])
 
 def upsert_contact(token, props, eid=None):
     if eid:
@@ -114,6 +117,10 @@ def main():
     for key in ["extracted","job_candidates","owner_id"]:
         if key not in st.session_state:
             st.session_state[key] = {} if key != "owner_id" else "162107431"
+    if "selected_job_ids" not in st.session_state:
+        st.session_state.selected_job_ids = {}
+    if "job_search_cache" not in st.session_state:
+        st.session_state.job_search_cache = {}
 
     # ── サイドバー ──────────────────────────────────────
     with st.sidebar:
@@ -239,39 +246,51 @@ def main():
 
         # 求人選択
         st.subheader("📄 求人の確認・選択")
-        selected_jobs = {}
         for i, d in enumerate(st.session_state.get("deals_snapshot", deals_in)):
             if not d["company"]: continue
             st.markdown(f"**取引 {i+1}: {d['company']}**")
-            kw     = st.text_input("求人キーワード検索", value=d["company"], key=f"job_kw_{i}")
+
+            # キーワード入力
+            kw_key = f"job_kw_{i}"
+            if kw_key not in st.session_state:
+                st.session_state[kw_key] = d["company"]
+            kw = st.text_input("求人キーワード検索", key=kw_key)
+
             pos_kw = d["position"].strip() if d["position"] else ""
             loc_kw = d["location"].strip()  if d["location"]  else ""
             combined_kw = " ".join(filter(None, [kw, loc_kw, pos_kw]))
 
-            if combined_kw:
-                cands = hs_search(token, "p243432503_job", combined_kw, ["job_name","hs_object_id"], limit=100)
-                co_l, loc_l, pos_l = kw.lower(), loc_kw.lower(), pos_kw.lower()
-                def relevance(c, co=co_l, lo=loc_l, po=pos_l):
-                    jn = c["properties"].get("job_name","").lower()
-                    score = 0
-                    if co and co in jn: score -= 10
-                    if lo and lo in jn: score -= 10
-                    if po and po in jn: score -= 20
-                    if co in jn and lo and lo in jn and po and po in jn: score -= 20
-                    return score
-                cands = sorted(cands, key=relevance)
-            else:
-                cands = st.session_state.job_candidates.get(i, [])
+            # 検索ボタンで明示的に再検索
+            if st.button("🔍 再検索", key=f"resrch_{i}") or i not in st.session_state.job_search_cache:
+                if combined_kw:
+                    results = hs_search(token, "p243432503_job", combined_kw, ["job_name","hs_object_id"], limit=100)
+                    co_l, loc_l, pos_l = kw.lower(), loc_kw.lower(), pos_kw.lower()
+                    def relevance(c, co=co_l, lo=loc_l, po=pos_l):
+                        jn = c["properties"].get("job_name","").lower()
+                        score = 0
+                        if co and co in jn: score -= 10
+                        if lo and lo in jn: score -= 10
+                        if po and po in jn: score -= 20
+                        if co in jn and lo and lo in jn and po and po in jn: score -= 20
+                        return score
+                    st.session_state.job_search_cache[i] = sorted(results, key=relevance)
+                else:
+                    st.session_state.job_search_cache[i] = st.session_state.job_candidates.get(i, [])
+
+            cands = st.session_state.job_search_cache.get(i, [])
 
             if cands:
                 opts = {"紐付けなし": None}
                 opts.update({c["properties"].get("job_name","(名称なし)"): c["id"] for c in cands})
-                sel = st.selectbox(f"求人を選択（{len(cands)}件）", list(opts.keys()), key=f"job_sel_{i}")
-                selected_jobs[i] = opts[sel]
-                if selected_jobs[i]: st.caption(f"✅ {sel}")
+                sel_key = f"job_sel_{i}"
+                sel = st.selectbox(f"求人を選択（{len(cands)}件）", list(opts.keys()), key=sel_key)
+                # 選択結果をセッションステートに保存
+                st.session_state.selected_job_ids[i] = opts.get(sel)
+                if st.session_state.selected_job_ids[i]:
+                    st.caption(f"✅ {sel}")
             else:
-                st.caption("見つかりませんでした。別キーワードで検索してください")
-                selected_jobs[i] = None
+                st.caption("見つかりませんでした。キーワードを変えて再検索してください")
+                st.session_state.selected_job_ids[i] = None
 
         ex = st.session_state.extracted
         with st.expander("📋 読み取り内容", expanded=False):
@@ -343,7 +362,7 @@ def main():
                     if not d["company"]: continue
                     co_res = hs_search(token,"companies", d["company"])
                     co_id  = co_res[0]["id"] if co_res else None
-                    job_id = selected_jobs.get(i)
+                    job_id = st.session_state.selected_job_ids.get(i)
                     parts  = [d["company"], d["location"]]
                     if d["position"]: parts.append(d["position"])
                     deal_name = "/".join(parts)
@@ -360,6 +379,8 @@ def main():
                 st.session_state.extracted           = {}
                 st.session_state.job_candidates      = {}
                 st.session_state.alliance_candidates = []
+                st.session_state.selected_job_ids   = {}
+                st.session_state.job_search_cache   = {}
 
 if __name__ == "__main__":
     main()
