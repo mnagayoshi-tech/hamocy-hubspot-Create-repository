@@ -148,11 +148,11 @@ def main():
     with st.sidebar:
         st.header("⚙️ 設定")
         token = st.secrets.get("HUBSPOT_TOKEN", "")
-    if not token:
-        token = st.text_input("HubSpot Token", type="password")
+        if not token:
+            token = st.text_input("HubSpot Token", type="password")
         anthropic_key = st.secrets.get("ANTHROPIC_API_KEY", "")
-    if not anthropic_key:
-        anthropic_key = st.text_input("Anthropic API Key", type="password")
+        if not anthropic_key:
+            anthropic_key = st.text_input("Anthropic API Key", type="password")
         user_email = st.text_input("担当者メールアドレス", placeholder="m.nagayoshi@hamocy.com")
 
         owner_id = "162107431"
