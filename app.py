@@ -175,9 +175,23 @@ def main():
             "細川 理子": "165897133",
             "永芳 昌裕": "162107431",
         }
-        selected_owner = st.selectbox("担当者を選択", list(OWNERS.keys()))
+        # URLパラメータから担当者を取得（ブックマーク対応）
+        params = st.query_params
+        url_owner = params.get("owner", "")
+        if "selected_owner" not in st.session_state:
+            # URLパラメータに一致する担当者があれば自動選択
+            st.session_state.selected_owner = url_owner if url_owner in OWNERS else list(OWNERS.keys())[0]
+
+        owner_idx = list(OWNERS.keys()).index(st.session_state.selected_owner) \
+                    if st.session_state.selected_owner in OWNERS else 0
+        selected_owner = st.selectbox("担当者を選択", list(OWNERS.keys()),
+                                      index=owner_idx, key="owner_select")
+        st.session_state.selected_owner = selected_owner
+        # URLパラメータを更新（ブックマーク用）
+        st.query_params["owner"] = selected_owner
         oid = OWNERS[selected_owner]
         st.caption(f"担当者ID: {oid}")
+        st.caption(f"🔖 このURLをブックマーク登録すると次回自動選択されます")
 
     # タイトル（サイドバー後に表示）
     st.title("🏢 アライアンス先求職者登録")
