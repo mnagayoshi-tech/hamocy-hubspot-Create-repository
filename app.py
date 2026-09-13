@@ -80,6 +80,34 @@ def hs_search(token, obj, keyword, props=["name","hs_object_id"], limit=100):
         return []
     return r.json().get("results",[])
 
+def hs_search_job(token, keyword, limit=100):
+    """求人をjob_nameプロパティで直接検索（フルテキスト検索非対応のため）"""
+    props = ["job_name","hs_object_id"]
+    # CONTAINS_TOKENで部分一致検索
+    r = requests.post("https://api.hubapi.com/crm/v3/objects/p243432503_job/search",
+        json={
+            "filterGroups": [{"filters": [{
+                "propertyName": "job_name",
+                "operator": "CONTAINS_TOKEN",
+                "value": keyword
+            }]}],
+            "properties": props,
+            "limit": limit
+        },
+        headers=hdr(token))
+    if r.ok:
+        results = r.json().get("results",[])
+        if results:
+            return results
+    # フォールバック: queryで再試行
+    r2 = requests.post("https://api.hubapi.com/crm/v3/objects/p243432503_job/search",
+        json={"query": keyword, "properties": props, "limit": limit},
+        headers=hdr(token))
+    if not r2.ok:
+        st.warning(f"🔴 求人検索エラー: {r2.status_code} - {r2.text[:200]}")
+        return []
+    return r2.json().get("results",[])
+
 def upsert_contact(token, props, eid=None):
     if eid:
         r = requests.patch(f"https://api.hubapi.com/crm/v3/objects/contacts/{eid}",
@@ -215,7 +243,7 @@ def main():
                 candidates = {}
                 for i, d in enumerate(deals_in):
                     if d["company"]:
-                        candidates[i] = hs_search(token, "p243432503_job", d["company"], ["job_name","hs_object_id"])
+                        candidates[i] = hs_search_job(token, d["company"])
                 st.session_state.job_candidates = candidates
                 st.session_state.deals_snapshot = deals_in
             st.success("✅ 候補を取得しました。下で確認・選択してください")
@@ -263,7 +291,7 @@ def main():
             # 検索ボタンで明示的に再検索
             if st.button("🔍 再検索", key=f"resrch_{i}") or i not in st.session_state.job_search_cache:
                 if combined_kw:
-                    results = hs_search(token, "p243432503_job", combined_kw, ["job_name","hs_object_id"], limit=100)
+                    results = hs_search_job(token, combined_kw)
                     co_l, loc_l, pos_l = kw.lower(), loc_kw.lower(), pos_kw.lower()
                     def relevance(c, co=co_l, lo=loc_l, po=pos_l):
                         jn = c["properties"].get("job_name","").lower()
