@@ -236,14 +236,22 @@ def main():
                 st.session_state.extracted = extract_info(blocks, api_key)
 
             with st.spinner("アライアンス・求人を検索中..."):
-                st.session_state.alliance_candidates = (
-                    hs_search(token, "p243432503_alliance", alliance_input, ["name","hs_object_id"], limit=30)
-                    if alliance_input else []
-                )
+                # アライアンス: 記号・スペースを除去して検索精度向上
+                def normalize(s):
+                    return s.replace("・","").replace("　","").replace(" ","").replace("株式会社","").lower()
+                al_norm = normalize(alliance_input) if alliance_input else ""
+                al_results = hs_search(token, "p243432503_alliance", alliance_input, ["name","hs_object_id"], limit=30) if alliance_input else []
+                # 正規化した名前でソート
+                if al_results:
+                    al_results.sort(key=lambda c: 0 if normalize(c["properties"].get("name","")) == al_norm
+                                    else (1 if al_norm in normalize(c["properties"].get("name","")) else 2))
+                st.session_state.alliance_candidates = al_results
+                # 求人: 会社名+勤務地+ポジションを全て含めて初期検索
                 candidates = {}
                 for i, d in enumerate(deals_in):
                     if d["company"]:
-                        candidates[i] = hs_search_job(token, d["company"])
+                        init_kw = " ".join(filter(None, [d["company"], d["location"], d["position"]]))
+                        candidates[i] = hs_search_job(token, init_kw)
                 st.session_state.job_candidates = candidates
                 st.session_state.deals_snapshot = deals_in
             st.success("✅ 候補を取得しました。下で確認・選択してください")
@@ -262,8 +270,11 @@ def main():
             for c in alliance_cands:
                 nm = c["properties"].get("name","(名称なし)")
                 al_options[nm] = (c["id"], nm)
+            keys = list(al_options.keys())
+            # デフォルトは最も一致度が高いもの（2番目＝1番目の候補）
+            default_idx = 1 if len(keys) > 1 else 0
             al_sel = st.selectbox(f"アライアンスを選択（{len(alliance_cands)}件）",
-                                  list(al_options.keys()), key="alliance_sel")
+                                  keys, index=default_idx, key="alliance_sel")
             selected_alliance_id, selected_alliance_name = al_options[al_sel]
             if selected_alliance_id:
                 st.caption(f"✅ 選択中: {al_sel}")
@@ -281,7 +292,8 @@ def main():
             # キーワード入力
             kw_key = f"job_kw_{i}"
             if kw_key not in st.session_state:
-                st.session_state[kw_key] = d["company"]
+                init_val = " ".join(filter(None, [d["company"], d["location"], d["position"]]))
+                st.session_state[kw_key] = init_val
             kw = st.text_input("求人キーワード検索", key=kw_key)
 
             pos_kw = d["position"].strip() if d["position"] else ""
