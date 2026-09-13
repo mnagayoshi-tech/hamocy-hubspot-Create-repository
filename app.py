@@ -3,7 +3,7 @@ import requests
 from datetime import date, datetime, timezone
 import json, base64
 
-st.set_page_config(page_title="Hamocy 候補者登録", page_icon="🏢", layout="centered")
+st.set_page_config(page_title="アライアンス先求職者登録", page_icon="🏢", layout="centered")
 
 PORTAL_ID              = "243432503"
 PIPELINE               = "default"
@@ -154,7 +154,7 @@ def make_deal(token, name, cid, company_id, alliance_id, job_id, oid):
 
 # ── メイン ────────────────────────────────────────────────
 def main():
-    st.title("🏢 Hamocy 候補者登録")
+    st.title("🏢 アライアンス先求職者登録")
 
     # セッション初期化
     for key in ["extracted","job_candidates","owner_id"]:
@@ -236,14 +236,20 @@ def main():
 
     # ── 取引 ─────────────────────────────────────────
     st.subheader("📋 取引")
-    num = st.number_input("取引数", min_value=1, max_value=8, value=1)
+    if "num_deals" not in st.session_state:
+        st.session_state.num_deals = 1
+
     deals_in = []
-    for i in range(int(num)):
+    for i in range(st.session_state.num_deals):
         cols = st.columns([3,2,2])
         with cols[0]: co  = st.text_input(f"会社名 {i+1}（部分入力でOK）", key=f"co_{i}")
         with cols[1]: loc = st.selectbox(f"勤務地 {i+1}", PREFS, key=f"loc_{i}")
         with cols[2]: pos = st.text_input(f"ポジション名 {i+1}", placeholder="営業職/出張 など", key=f"pos_{i}")
         deals_in.append({"company":co,"location":loc,"position":pos})
+
+    if st.button("＋ 取引を追加", key="add_deal"):
+        st.session_state.num_deals += 1
+        st.rerun()
 
     st.divider()
 
@@ -454,6 +460,7 @@ def main():
                 st.session_state.alliance_candidates = []
                 st.session_state.selected_job_ids   = {}
                 st.session_state.job_search_cache   = {}
+                st.session_state.num_deals          = 1
 
 if __name__ == "__main__":
     main()
