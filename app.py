@@ -197,15 +197,29 @@ def main():
     input_ready = False
     if method == "📄 PDFアップロード":
         st.markdown("""
-        <div style='background:#f0f7ff;border:2px dashed #4a9eff;border-radius:12px;
-                    padding:20px 20px 8px 20px;margin-bottom:8px;'>
-        <p style='color:#4a9eff;font-size:15px;margin:0 0 8px 0;'>
-        📎 <strong>履歴書PDFをここにドラッグ＆ドロップ</strong>、またはクリックしてファイルを選択<br>
-        <span style='font-size:12px;color:#888;'>PC・スマホのファイルアプリからドラッグできます</span>
+        <style>
+        [data-testid="stFileUploader"] section {
+            background: #f0f7ff;
+            border: 2px dashed #4a9eff;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        [data-testid="stFileUploader"] section > div {
+            color: #4a9eff;
+            font-weight: bold;
+        }
+        [data-testid="stFileUploader"] section p {
+            color: #4a9eff !important;
+        }
+        [data-testid="stFileUploader"] button {
+            display: none;
+        }
+        </style>
+        <p style='color:#4a9eff;font-size:13px;margin:4px 0 2px 0;'>
+        📎 履歴書PDFをドラッグ＆ドロップ、またはクリックしてファイルを選択
         </p>
-        </div>
         """, unsafe_allow_html=True)
-        f = st.file_uploader("履歴書PDF", type=["pdf"], label_visibility="collapsed")
+        f = st.file_uploader("", type=["pdf"], label_visibility="collapsed")
         if f:
             st.session_state["_pdf_bytes"] = f.read()
             input_ready = True
@@ -315,20 +329,20 @@ def main():
             loc_kw = d["location"].strip()  if d["location"]  else ""
             combined_kw = " ".join(filter(None, [kw, loc_kw, pos_kw]))
 
-            # 検索ボタンで明示的に再検索
             if st.button("🔍 再検索", key=f"resrch_{i}") or i not in st.session_state.job_search_cache:
                 if combined_kw:
                     results = hs_search_job(token, combined_kw)
-                    co_l, loc_l, pos_l = kw.lower(), loc_kw.lower(), pos_kw.lower()
-                    def relevance(c, co=co_l, lo=loc_l, po=pos_l):
+                    tokens = [t.lower() for t in combined_kw.replace("　"," ").split() if t]
+                    co_l = kw.lower()  # 会社名は最優先
+                    def relevance(c, toks=tokens, co=co_l):
                         jn = c["properties"].get("job_name","").lower()
-                        score = 0
-                        if co and co in jn: score -= 10
-                        if lo and lo in jn: score -= 10
-                        if po and po in jn: score -= 20
-                        if co in jn and lo and lo in jn and po and po in jn: score -= 20
-                        return score
-                    st.session_state.job_search_cache[i] = sorted(results, key=relevance)
+                        # 会社名が含まれなければ大幅減点
+                        if co and co not in jn: return 100
+                        # マッチしたトークン数（多いほど上位）
+                        matched = sum(1 for t in toks if t in jn)
+                        return -matched
+                    results = sorted(results, key=relevance)
+                    st.session_state.job_search_cache[i] = results
                 else:
                     st.session_state.job_search_cache[i] = st.session_state.job_candidates.get(i, [])
 
@@ -337,9 +351,12 @@ def main():
             if cands:
                 opts = {"紐付けなし": None}
                 opts.update({c["properties"].get("job_name","(名称なし)"): c["id"] for c in cands})
+                keys = list(opts.keys())
+                # デフォルトは最上位候補（会社名マッチのもの）
+                default_idx = 1 if len(keys) > 1 else 0
                 sel_key = f"job_sel_{i}"
-                sel = st.selectbox(f"求人を選択（{len(cands)}件）", list(opts.keys()), key=sel_key)
-                # 選択結果をセッションステートに保存
+                sel = st.selectbox(f"求人を選択（{len(cands)}件）", keys,
+                                   index=default_idx, key=sel_key)
                 st.session_state.selected_job_ids[i] = opts.get(sel)
                 if st.session_state.selected_job_ids[i]:
                     st.caption(f"✅ {sel}")
