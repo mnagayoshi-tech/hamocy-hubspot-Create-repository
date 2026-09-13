@@ -209,15 +209,27 @@ def main():
         selected_jobs = {}
         for i, d in enumerate(st.session_state.get("deals_snapshot", deals_in)):
             if not d["company"]: continue
-            cands = st.session_state.job_candidates.get(i, [])
             st.markdown(f"**取引 {i+1}: {d['company']}**")
+
+            # キーワード再検索
+            kw = st.text_input(f"求人キーワード検索", value=d["company"],
+                               key=f"job_kw_{i}", placeholder="会社名・ポジション名など")
+            if kw:
+                cands = hs_search(token, "p243432505_job", kw, ["name","hs_object_id"], limit=20)
+                if not cands:
+                    cands = hs_search(token, "p243432503_job", kw, ["name","hs_object_id"], limit=20)
+            else:
+                cands = st.session_state.job_candidates.get(i, [])
+
             if cands:
                 options = {"紐付けなし": None}
                 options.update({c["properties"].get("name","(名称なし)"): c["id"] for c in cands})
-                sel = st.selectbox(f"求人を選択", list(options.keys()), key=f"job_sel_{i}")
+                sel = st.selectbox(f"求人を選択（{len(cands)}件）", list(options.keys()), key=f"job_sel_{i}")
                 selected_jobs[i] = options[sel]
+                if selected_jobs[i]:
+                    st.caption(f"✅ 選択中: {sel}")
             else:
-                st.caption("　→ 求人が見つかりませんでした（紐付けなし）")
+                st.caption("　→ 見つかりませんでした。別キーワードで検索してください")
                 selected_jobs[i] = None
 
         ex = st.session_state.extracted
