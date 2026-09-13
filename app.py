@@ -429,7 +429,10 @@ def main():
 
                 if selected_alliance_id:
                     ok2 = assoc_contact_alliance(token, cid, selected_alliance_id)
-                    st.success("✅ コンタクト-アライアンス紐付け完了") if ok2 else st.warning("⚠️ コンタクト-アライアンス紐付け失敗")
+                    if ok2:
+                        st.success("✅ コンタクト-アライアンス紐付け完了")
+                    else:
+                        st.warning("⚠️ コンタクト-アライアンス紐付け失敗")
 
                 snap = st.session_state.get("deals_snapshot", deals_in)
                 for i, d in enumerate(snap):
