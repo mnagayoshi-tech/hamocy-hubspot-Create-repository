@@ -71,7 +71,7 @@ def find_owner_id(owners, email):
         if o.get("email","").lower() == email.lower(): return str(o["id"])
     return "162107431"
 
-def hs_search(token, obj, keyword, props=["name","hs_object_id"], limit=5):
+def hs_search(token, obj, keyword, props=["name","hs_object_id"], limit=100):
     r = requests.post(f"https://api.hubapi.com/crm/v3/objects/{obj}/search",
         json={"query": keyword, "properties": props, "limit": limit},
         headers=hdr(token))
@@ -197,7 +197,7 @@ def main():
                 candidates = {}
                 for i, d in enumerate(deals_in):
                     if d["company"]:
-                        jobs = hs_search(token, "p243432503_job", d["company"])
+                        jobs = hs_search(token, "p243432503_job", d["company"], ["job_name","hs_object_id"])
                         candidates[i] = jobs
                 st.session_state.job_candidates = candidates
                 st.session_state.deals_snapshot = deals_in
@@ -215,15 +215,23 @@ def main():
             kw = st.text_input(f"求人キーワード検索", value=d["company"],
                                key=f"job_kw_{i}", placeholder="会社名・ポジション名など")
             if kw:
-                cands = hs_search(token, "p243432505_job", kw, ["name","hs_object_id"], limit=20)
-                if not cands:
-                    cands = hs_search(token, "p243432503_job", kw, ["name","hs_object_id"], limit=20)
+                cands = hs_search(token, "p243432503_job", kw, ["job_name","hs_object_id"], limit=100)
+                # 一致度スコアで並び替え
+                def relevance(c):
+                    jn = c["properties"].get("job_name","").lower()
+                    kw_l = kw.lower()
+                    if jn == kw_l: return 0
+                    if jn.startswith(kw_l): return 1
+                    if kw_l in jn: return 2
+                    matches = sum(1 for ch in kw_l if ch in jn)
+                    return 3 + (len(kw_l) - matches)
+                cands = sorted(cands, key=relevance)
             else:
                 cands = st.session_state.job_candidates.get(i, [])
 
             if cands:
                 options = {"紐付けなし": None}
-                options.update({c["properties"].get("name","(名称なし)"): c["id"] for c in cands})
+                options.update({c["properties"].get("job_name","(名称なし)"): c["id"] for c in cands})
                 sel = st.selectbox(f"求人を選択（{len(cands)}件）", list(options.keys()), key=f"job_sel_{i}")
                 selected_jobs[i] = options[sel]
                 if selected_jobs[i]:
