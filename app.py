@@ -154,10 +154,6 @@ def make_deal(token, name, cid, company_id, alliance_id, job_id, oid):
 
 # ── メイン ────────────────────────────────────────────────
 def main():
-    st.title("🏢 アライアンス先求職者登録")
-    st.markdown(f"<p style='color:#888;font-size:14px;margin-top:-12px;'>担当者：<strong style='color:#333;'>{selected_owner}</strong> で作成</p>",
-                unsafe_allow_html=True)
-
     # セッション初期化
     for key in ["extracted","job_candidates","owner_id"]:
         if key not in st.session_state:
@@ -173,7 +169,6 @@ def main():
         token   = st.secrets.get("HUBSPOT_TOKEN","")   or st.text_input("HubSpot Token", type="password")
         api_key = st.secrets.get("ANTHROPIC_API_KEY","") or st.text_input("Anthropic API Key", type="password")
 
-        # 担当者をドロップダウンで選択
         OWNERS = {
             "服部 健大": "82268477",
             "平田 峻一": "160024984",
@@ -183,6 +178,11 @@ def main():
         selected_owner = st.selectbox("担当者を選択", list(OWNERS.keys()))
         oid = OWNERS[selected_owner]
         st.caption(f"担当者ID: {oid}")
+
+    # タイトル（サイドバー後に表示）
+    st.title("🏢 アライアンス先求職者登録")
+    st.markdown(f"<p style='color:#888;font-size:14px;margin-top:-12px;'>担当者：<strong style='color:#333;'>{selected_owner}</strong> で作成</p>",
+                unsafe_allow_html=True)
 
     if not token:
         st.info("サイドバーにTokenを入力してください")
