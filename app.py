@@ -187,13 +187,12 @@ def main():
 
     st.divider()
 
-    # ── STEP1: 求人を検索 ────────────────────────────
-    if st.button("🔍 求人を検索して確認", use_container_width=True):
+    # ── STEP1: 検索 ──────────────────────────────
+    if st.button("🔍 アライアンス・求人を検索して確認", use_container_width=True):
         if not input_ready:
             st.error("候補者情報を入力してください")
         else:
             with st.spinner("情報を読み取り中..."):
-                # AI抽出
                 if method == "📄 PDFアップロード":
                     b64 = base64.standard_b64encode(st.session_state["_pdf_bytes"]).decode()
                     blocks = [{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":b64}}]
@@ -201,60 +200,77 @@ def main():
                     blocks = [{"type":"text","text":st.session_state["_paste_text"]}]
                 st.session_state.extracted = extract_info(blocks, api_key)
 
-            with st.spinner("求人を検索中..."):
-                # 各取引の求人候補を取得
+            with st.spinner("アライアンス・求人を検索中..."):
+                st.session_state.alliance_candidates = (
+                    hs_search(token, "p243432503_alliance", alliance_input, ["name","hs_object_id"], limit=30)
+                    if alliance_input else []
+                )
                 candidates = {}
                 for i, d in enumerate(deals_in):
                     if d["company"]:
-                        jobs = hs_search(token, "p243432503_job", d["company"], ["job_name","hs_object_id"])
-                        candidates[i] = jobs
+                        candidates[i] = hs_search(token, "p243432503_job", d["company"], ["job_name","hs_object_id"])
                 st.session_state.job_candidates = candidates
                 st.session_state.deals_snapshot = deals_in
-            st.success("✅ 求人候補を取得しました。下で確認・選択してください")
+            st.success("✅ 候補を取得しました。下で確認・選択してください")
 
-    # ── 求人選択UI ───────────────────────────────────
-    if st.session_state.get("job_candidates") and st.session_state.get("extracted"):
+    # ── 選択UI ───────────────────────────────────
+    if st.session_state.get("extracted") and st.session_state.get("job_candidates") is not None:
+
+        # アライアンス選択
+        st.subheader("🤝 アライアンス先の確認・選択")
+        alliance_cands = st.session_state.get("alliance_candidates", [])
+        selected_alliance_id   = None
+        selected_alliance_name = alliance_input
+
+        if alliance_cands:
+            al_options = {"紐付けなし": (None, alliance_input)}
+            for c in alliance_cands:
+                nm = c["properties"].get("name","(名称なし)")
+                al_options[nm] = (c["id"], nm)
+            al_sel = st.selectbox(f"アライアンスを選択（{len(alliance_cands)}件）",
+                                  list(al_options.keys()), key="alliance_sel")
+            selected_alliance_id, selected_alliance_name = al_options[al_sel]
+            if selected_alliance_id:
+                st.caption(f"✅ 選択中: {al_sel}")
+        elif alliance_input:
+            st.caption("アライアンスが見つかりませんでした")
+
+        st.divider()
+
+        # 求人選択
         st.subheader("📄 求人の確認・選択")
         selected_jobs = {}
         for i, d in enumerate(st.session_state.get("deals_snapshot", deals_in)):
             if not d["company"]: continue
             st.markdown(f"**取引 {i+1}: {d['company']}**")
-
-            # キーワード再検索
-            kw = st.text_input(f"求人キーワード検索", value=d["company"],
-                               key=f"job_kw_{i}", placeholder="会社名・ポジション名など")
-            # 会社名＋勤務地＋ポジション名を全て組み合わせて検索
+            kw     = st.text_input("求人キーワード検索", value=d["company"], key=f"job_kw_{i}")
             pos_kw = d["position"].strip() if d["position"] else ""
-            loc_kw = d["location"].strip() if d["location"] else ""
+            loc_kw = d["location"].strip()  if d["location"]  else ""
             combined_kw = " ".join(filter(None, [kw, loc_kw, pos_kw]))
 
             if combined_kw:
                 cands = hs_search(token, "p243432503_job", combined_kw, ["job_name","hs_object_id"], limit=100)
-                co_l  = kw.lower()
-                loc_l = loc_kw.lower()
-                pos_l = pos_kw.lower()
-                def relevance(c):
+                co_l, loc_l, pos_l = kw.lower(), loc_kw.lower(), pos_kw.lower()
+                def relevance(c, co=co_l, lo=loc_l, po=pos_l):
                     jn = c["properties"].get("job_name","").lower()
                     score = 0
-                    if co_l  and co_l  in jn: score -= 10
-                    if loc_l and loc_l in jn: score -= 10
-                    if pos_l and pos_l in jn: score -= 20
-                    # 全て含む場合が最高
-                    if co_l in jn and loc_l and loc_l in jn and pos_l and pos_l in jn: score -= 20
+                    if co and co in jn: score -= 10
+                    if lo and lo in jn: score -= 10
+                    if po and po in jn: score -= 20
+                    if co in jn and lo and lo in jn and po and po in jn: score -= 20
                     return score
                 cands = sorted(cands, key=relevance)
             else:
                 cands = st.session_state.job_candidates.get(i, [])
 
             if cands:
-                options = {"紐付けなし": None}
-                options.update({c["properties"].get("job_name","(名称なし)"): c["id"] for c in cands})
-                sel = st.selectbox(f"求人を選択（{len(cands)}件）", list(options.keys()), key=f"job_sel_{i}")
-                selected_jobs[i] = options[sel]
-                if selected_jobs[i]:
-                    st.caption(f"✅ 選択中: {sel}")
+                opts = {"紐付けなし": None}
+                opts.update({c["properties"].get("job_name","(名称なし)"): c["id"] for c in cands})
+                sel = st.selectbox(f"求人を選択（{len(cands)}件）", list(opts.keys()), key=f"job_sel_{i}")
+                selected_jobs[i] = opts[sel]
+                if selected_jobs[i]: st.caption(f"✅ {sel}")
             else:
-                st.caption("　→ 見つかりませんでした。別キーワードで検索してください")
+                st.caption("見つかりませんでした。別キーワードで検索してください")
                 selected_jobs[i] = None
 
         ex = st.session_state.extracted
@@ -263,9 +279,8 @@ def main():
 
         st.divider()
 
-        # ── STEP2: 登録実行 ──────────────────────────
+        # ── STEP2: 登録実行 ──────────────────────
         if st.button("✅ 登録実行", type="primary", use_container_width=True):
-            ex = st.session_state.extracted
             ln = ex.get("lastname","")
             fn = ex.get("firstname","")
             if not ln or not fn:
@@ -273,32 +288,16 @@ def main():
                 return
 
             with st.spinner("HubSpotに登録中..."):
-
-                # 生年月日・年齢
                 bd_str = ex.get("birthdate")
                 try:   bd = date.fromisoformat(bd_str)
                 except: bd = None
                 age_val = str(calc_age(bd)) if bd else ""
 
-                # 重複チェック
                 existing = hs_search(token,"contacts",f"{ln} {fn}",["firstname","lastname","email"])
                 eid = existing[0]["id"] if existing else None
                 if eid: st.warning(f"⚠️ 既存コンタクト (ID:{eid}) → 更新します")
 
-                # アライアンス
-                alliance_id, alliance_name = None, alliance_input
-                if alliance_input:
-                    ar = hs_search(token,"p243432503_alliance", alliance_input, limit=3)
-                    if ar:
-                        # 部分一致で最も近いものを選択
-                        best = min(ar, key=lambda x: abs(len(x["properties"].get("name","")) - len(alliance_input)))
-                        alliance_id   = best["id"]
-                        alliance_name = best["properties"].get("name", alliance_input)
-                        st.info(f"🤝 アライアンス: {alliance_name}")
-
-                # 希望勤務地 = 取引1の勤務地
                 kibou = (st.session_state.deals_snapshot or deals_in)[0]["location"] if deals_in else "東京"
-
                 keiken_num = ex.get("keiken") or 1
                 try: keiken_num = int(str(keiken_num))
                 except: keiken_num = 1
@@ -323,7 +322,7 @@ def main():
                     "hs_lead_status":   "推薦",
                     "rank":             "D",
                     "hubspot_owner_id": oid,
-                    "alaiancekigyou":   alliance_name,
+                    "alaiancekigyou":   selected_alliance_name,
                 }
                 props = {k:v for k,v in props.items() if v}
 
@@ -335,27 +334,20 @@ def main():
                 action = "更新" if eid else "新規作成"
                 st.success(f"✅ コンタクト{action} (ID:{cid})")
 
-                if alliance_id:
-                    ok2 = assoc_contact_alliance(token, cid, alliance_id)
-                    st.success("✅ アライアンス紐付け完了") if ok2 else st.warning("⚠️ アライアンス紐付け失敗")
+                if selected_alliance_id:
+                    ok2 = assoc_contact_alliance(token, cid, selected_alliance_id)
+                    st.success("✅ コンタクト-アライアンス紐付け完了") if ok2 else st.warning("⚠️ コンタクト-アライアンス紐付け失敗")
 
-                # 取引作成
                 snap = st.session_state.get("deals_snapshot", deals_in)
                 for i, d in enumerate(snap):
                     if not d["company"]: continue
-
-                    co_res  = hs_search(token,"companies", d["company"])
-                    co_id   = co_res[0]["id"] if co_res else None
-                    job_id  = selected_jobs.get(i)
-
-                    if co_id:  st.info(f"🏢 {co_res[0]['properties'].get('name', d['company'])}")
-                    if job_id: st.info(f"📄 求人紐付け済み")
-
-                    parts = [d["company"], d["location"]]
+                    co_res = hs_search(token,"companies", d["company"])
+                    co_id  = co_res[0]["id"] if co_res else None
+                    job_id = selected_jobs.get(i)
+                    parts  = [d["company"], d["location"]]
                     if d["position"]: parts.append(d["position"])
                     deal_name = "/".join(parts)
-
-                    dr  = make_deal(token, deal_name, cid, co_id, alliance_id, job_id, oid)
+                    dr  = make_deal(token, deal_name, cid, co_id, selected_alliance_id, job_id, oid)
                     did = dr.get("id")
                     if did:
                         url = f"https://app.hubspot.com/contacts/{PORTAL_ID}/record/0-3/{did}"
@@ -365,10 +357,9 @@ def main():
 
                 st.link_button("🔗 コンタクトをHubSpotで確認",
                                f"https://app.hubspot.com/contacts/{PORTAL_ID}/record/0-1/{cid}")
-
-                # セッションリセット
-                st.session_state.extracted      = {}
-                st.session_state.job_candidates = {}
+                st.session_state.extracted           = {}
+                st.session_state.job_candidates      = {}
+                st.session_state.alliance_candidates = []
 
 if __name__ == "__main__":
     main()
