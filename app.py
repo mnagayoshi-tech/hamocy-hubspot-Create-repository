@@ -171,24 +171,30 @@ def main():
         token   = st.secrets.get("HUBSPOT_TOKEN","")   or st.text_input("HubSpot Token", type="password")
         api_key = st.secrets.get("ANTHROPIC_API_KEY","") or st.text_input("Anthropic API Key", type="password")
 
-        # メアドはセッション保持
-        if "user_email" not in st.session_state:
-            st.session_state.user_email = ""
-        email_input = st.text_input("担当者メール", value=st.session_state.user_email,
-                                    placeholder="m.nagayoshi@hamocy.com")
-        if email_input != st.session_state.user_email:
-            st.session_state.user_email = email_input
-            if token:
-                st.session_state.owner_id = find_owner_id(get_owners(token), email_input)
-
-        if st.session_state.user_email:
-            st.caption(f"担当者ID: {st.session_state.owner_id}")
+        # 担当者をドロップダウンで選択
+        OWNERS = {
+            "永芳昌裕 (Masahiro Nagayoshi)": "162107431",
+            "原田将寛 (Masahiro Harada)": "62352138",
+            "服部健太 (Kenta Hattori)": "82268477",
+            "大和田大輝 (Hiroki Owada)": "159639298",
+            "山西優真 (Yuma Yamanishi)": "160024980",
+            "林田恵里 (Eri Hayashida)": "160024983",
+            "平田俊一 (Shunichi Hirata)": "160024984",
+            "加藤正道 (Masamichi Kato)": "160024987",
+            "雑賀えみな (Emina Saiga)": "161694030",
+            "高橋光輝 (Koki Takahashi)": "162253556",
+            "北野ゆい (yui kitano)": "164430492",
+            "今井光太 (Kota Imai)": "164501619",
+            "細川莉子 (Riko Hosokawa)": "165897133",
+            "松尾泰洋 (Yasuhiro Matsuo)": "166746349",
+        }
+        selected_owner = st.selectbox("担当者を選択", list(OWNERS.keys()))
+        oid = OWNERS[selected_owner]
+        st.caption(f"担当者ID: {oid}")
 
     if not token:
         st.info("サイドバーにTokenを入力してください")
         return
-
-    oid = st.session_state.owner_id
 
     # ── 入力方法 ──────────────────────────────────────
     st.subheader("📥 候補者情報")
