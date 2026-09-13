@@ -467,9 +467,26 @@ def main():
                     co_res = hs_search(token,"companies", d["company"])
                     co_id  = co_res[0]["id"] if co_res else None
                     job_id = st.session_state.selected_job_ids.get(i)
-                    parts  = [d["company"], d["location"]]
-                    if d["position"]: parts.append(d["position"])
-                    deal_name = "/".join(parts)
+
+                    # 取引名：求人が選択されていれば求人名から生成
+                    if job_id:
+                        # 選択された求人名を取得
+                        cache = st.session_state.job_search_cache.get(i, [])
+                        job_name = next((c["properties"].get("job_name","") for c in cache
+                                        if c["id"] == job_id), "")
+                        if job_name and "】" in job_name:
+                            # 【会社名】ポジション → 【会社名】勤務地_ポジション
+                            bracket_end = job_name.index("】") + 1
+                            company_part = job_name[:bracket_end]
+                            position_part = job_name[bracket_end:].strip()
+                            deal_name = f"{company_part}{d['location']}_{position_part}"
+                        else:
+                            deal_name = job_name or "/".join(filter(None,[d["company"],d["location"],d["position"]]))
+                    else:
+                        # 求人未選択時は従来フォーマット
+                        parts = [d["company"], d["location"]]
+                        if d["position"]: parts.append(d["position"])
+                        deal_name = "/".join(parts)
                     dr  = make_deal(token, deal_name, cid, co_id, selected_alliance_id, job_id, oid)
                     did = dr.get("id")
                     if did:
