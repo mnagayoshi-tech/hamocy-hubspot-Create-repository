@@ -155,6 +155,8 @@ def make_deal(token, name, cid, company_id, alliance_id, job_id, oid):
 # ── メイン ────────────────────────────────────────────────
 def main():
     st.title("🏢 アライアンス先求職者登録")
+    st.markdown(f"<p style='color:#888;font-size:14px;margin-top:-12px;'>担当者：<strong style='color:#333;'>{selected_owner}</strong> で作成</p>",
+                unsafe_allow_html=True)
 
     # セッション初期化
     for key in ["extracted","job_candidates","owner_id"]:
@@ -320,53 +322,76 @@ def main():
             if not d["company"]: continue
             st.markdown(f"**取引 {i+1}: {d['company']}**")
 
-            # キーワード入力
-            kw_key = f"job_kw_{i}"
-            if kw_key not in st.session_state:
-                init_val = " ".join(filter(None, [d["company"], d["location"], d["position"]]))
-                st.session_state[kw_key] = init_val
-            kw = st.text_input("求人キーワード検索", key=kw_key)
+            # 再検索フラグをセッションで管理
+            resrch_flag_key = f"show_kw_{i}"
+            if resrch_flag_key not in st.session_state:
+                st.session_state[resrch_flag_key] = False
 
-            pos_kw = d["position"].strip() if d["position"] else ""
-            loc_kw = d["location"].strip()  if d["location"]  else ""
-            combined_kw = " ".join(filter(None, [kw, loc_kw, pos_kw]))
-
-            if st.button("🔍 再検索", key=f"resrch_{i}") or i not in st.session_state.job_search_cache:
-                if combined_kw:
-                    results = hs_search_job(token, combined_kw)
-                    tokens = [t.lower() for t in combined_kw.replace("　"," ").split() if t]
-                    # 会社名は元のd["company"]を使う（kwは検索キーワード全体なので使わない）
+            # 初回は自動検索、再検索ボタンで検索欄を表示
+            if i not in st.session_state.job_search_cache:
+                init_kw = " ".join(filter(None, [d["company"], d["location"], d["position"]]))
+                if init_kw:
+                    results = hs_search_job(token, init_kw)
                     co_token = d["company"].lower()
+                    tokens = [t.lower() for t in init_kw.replace("　"," ").split() if t]
                     def relevance(c, toks=tokens, co=co_token):
                         jn = c["properties"].get("job_name","").lower()
-                        # 会社名が含まれなければ最後尾に
-                        if co and co not in jn:
-                            return 1000
-                        # マッチしたトークン数が多いほど上位
+                        if co and co not in jn: return 1000
                         matched = sum(1 for t in toks if t in jn)
                         return -matched
-                    results = sorted(results, key=relevance)
-                    st.session_state.job_search_cache[i] = results
+                    st.session_state.job_search_cache[i] = sorted(results, key=relevance)
                 else:
-                    st.session_state.job_search_cache[i] = st.session_state.job_candidates.get(i, [])
+                    st.session_state.job_search_cache[i] = []
 
             cands = st.session_state.job_search_cache.get(i, [])
+
+            # キーワード検索欄（再検索ボタンを押した時のみ表示）
+            if st.session_state[resrch_flag_key]:
+                kw_key = f"job_kw_{i}"
+                if kw_key not in st.session_state:
+                    st.session_state[kw_key] = " ".join(filter(None, [d["company"], d["location"], d["position"]]))
+                kw = st.text_input("求人キーワード検索", key=kw_key)
+                if st.button("🔍 この条件で検索", key=f"do_srch_{i}"):
+                    pos_kw = d["position"].strip() if d["position"] else ""
+                    loc_kw = d["location"].strip() if d["location"] else ""
+                    combined_kw = " ".join(filter(None, [kw, loc_kw, pos_kw]))
+                    if combined_kw:
+                        results = hs_search_job(token, combined_kw)
+                        co_token = d["company"].lower()
+                        tokens2 = [t.lower() for t in combined_kw.replace("　"," ").split() if t]
+                        def relevance2(c, toks=tokens2, co=co_token):
+                            jn = c["properties"].get("job_name","").lower()
+                            if co and co not in jn: return 1000
+                            matched = sum(1 for t in toks if t in jn)
+                            return -matched
+                        st.session_state.job_search_cache[i] = sorted(results, key=relevance2)
+                        st.session_state[resrch_flag_key] = False
+                        st.rerun()
 
             if cands:
                 opts = {"紐付けなし": None}
                 opts.update({c["properties"].get("job_name","(名称なし)"): c["id"] for c in cands})
                 keys = list(opts.keys())
-                # デフォルトは最上位候補（会社名マッチのもの）
                 default_idx = 1 if len(keys) > 1 else 0
                 sel_key = f"job_sel_{i}"
-                sel = st.selectbox(f"求人を選択（{len(cands)}件）", keys,
+                # 目立つスタイルでselectbox表示
+                st.markdown("<div style='background:#f0f7ff;border:1.5px solid #4a9eff;border-radius:8px;padding:8px 12px 4px 12px;margin:4px 0 8px 0;'>", unsafe_allow_html=True)
+                sel = st.selectbox(f"🔖 求人を選択（{len(cands)}件ヒット）", keys,
                                    index=default_idx, key=sel_key)
+                st.markdown("</div>", unsafe_allow_html=True)
                 st.session_state.selected_job_ids[i] = opts.get(sel)
                 if st.session_state.selected_job_ids[i]:
-                    st.caption(f"✅ {sel}")
+                    st.success(f"✅ {sel}")
+                # 再検索ボタン
+                if st.button("🔄 別の求人を探す", key=f"resrch_{i}"):
+                    st.session_state[resrch_flag_key] = True
+                    st.rerun()
             else:
-                st.caption("見つかりませんでした。キーワードを変えて再検索してください")
+                st.warning("求人が見つかりませんでした")
                 st.session_state.selected_job_ids[i] = None
+                if st.button("🔄 キーワードを変えて再検索", key=f"resrch_{i}"):
+                    st.session_state[resrch_flag_key] = True
+                    st.rerun()
 
         ex = st.session_state.extracted
         with st.expander("📋 読み取り内容", expanded=False):
