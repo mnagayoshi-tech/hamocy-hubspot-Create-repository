@@ -146,7 +146,16 @@ def main():
 
     input_ready = False
     if method == "📄 PDFアップロード":
-        f = st.file_uploader("履歴書PDFをドラッグ＆ドロップ", type=["pdf"], label_visibility="collapsed")
+        st.markdown("""
+        <div style='background:#f0f7ff;border:2px dashed #4a9eff;border-radius:12px;
+                    padding:20px 20px 8px 20px;margin-bottom:8px;'>
+        <p style='color:#4a9eff;font-size:15px;margin:0 0 8px 0;'>
+        📎 <strong>履歴書PDFをここにドラッグ＆ドロップ</strong>、またはクリックしてファイルを選択<br>
+        <span style='font-size:12px;color:#888;'>PC・スマホのファイルアプリからドラッグできます</span>
+        </p>
+        </div>
+        """, unsafe_allow_html=True)
+        f = st.file_uploader("履歴書PDF", type=["pdf"], label_visibility="collapsed")
         if f:
             st.session_state["_pdf_bytes"] = f.read()
             input_ready = True
@@ -214,17 +223,22 @@ def main():
             # キーワード再検索
             kw = st.text_input(f"求人キーワード検索", value=d["company"],
                                key=f"job_kw_{i}", placeholder="会社名・ポジション名など")
-            if kw:
-                cands = hs_search(token, "p243432503_job", kw, ["job_name","hs_object_id"], limit=100)
-                # 一致度スコアで並び替え
+            # 会社名＋ポジション名を組み合わせて検索
+            pos_kw = d["position"].strip() if d["position"] else ""
+            combined_kw = f"{kw} {pos_kw}".strip() if pos_kw else kw
+
+            if combined_kw:
+                cands = hs_search(token, "p243432503_job", combined_kw, ["job_name","hs_object_id"], limit=100)
+                # 両方含むものを優先してソート
+                co_l  = kw.lower()
+                pos_l = pos_kw.lower()
                 def relevance(c):
                     jn = c["properties"].get("job_name","").lower()
-                    kw_l = kw.lower()
-                    if jn == kw_l: return 0
-                    if jn.startswith(kw_l): return 1
-                    if kw_l in jn: return 2
-                    matches = sum(1 for ch in kw_l if ch in jn)
-                    return 3 + (len(kw_l) - matches)
+                    score = 0
+                    if co_l and co_l in jn:  score -= 10
+                    if pos_l and pos_l in jn: score -= 20
+                    if co_l in jn and pos_l and pos_l in jn: score -= 30
+                    return score
                 cands = sorted(cands, key=relevance)
             else:
                 cands = st.session_state.job_candidates.get(i, [])
