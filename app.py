@@ -191,7 +191,7 @@ def main():
         st.query_params["owner"] = selected_owner
         oid = OWNERS[selected_owner]
         st.caption(f"担当者ID: {oid}")
-        st.caption(f"🔖担当者を自分に設定した上でこのURLをブックマーク登録すると次回から自分が自動選択されます")
+        st.caption(f"🔖担当者を自分に設定した上でこのページをブックマーク登録すると次回から自分が自動選択されます")
 
     # タイトル（サイドバー後に表示）
     st.title("🏢 アライアンス先求職者登録")
