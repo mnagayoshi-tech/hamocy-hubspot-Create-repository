@@ -333,12 +333,14 @@ def main():
                 if combined_kw:
                     results = hs_search_job(token, combined_kw)
                     tokens = [t.lower() for t in combined_kw.replace("　"," ").split() if t]
-                    co_l = kw.lower()  # 会社名は最優先
-                    def relevance(c, toks=tokens, co=co_l):
+                    # 会社名は元のd["company"]を使う（kwは検索キーワード全体なので使わない）
+                    co_token = d["company"].lower()
+                    def relevance(c, toks=tokens, co=co_token):
                         jn = c["properties"].get("job_name","").lower()
-                        # 会社名が含まれなければ大幅減点
-                        if co and co not in jn: return 100
-                        # マッチしたトークン数（多いほど上位）
+                        # 会社名が含まれなければ最後尾に
+                        if co and co not in jn:
+                            return 1000
+                        # マッチしたトークン数が多いほど上位
                         matched = sum(1 for t in toks if t in jn)
                         return -matched
                     results = sorted(results, key=relevance)
