@@ -223,21 +223,24 @@ def main():
             # キーワード再検索
             kw = st.text_input(f"求人キーワード検索", value=d["company"],
                                key=f"job_kw_{i}", placeholder="会社名・ポジション名など")
-            # 会社名＋ポジション名を組み合わせて検索
+            # 会社名＋勤務地＋ポジション名を全て組み合わせて検索
             pos_kw = d["position"].strip() if d["position"] else ""
-            combined_kw = f"{kw} {pos_kw}".strip() if pos_kw else kw
+            loc_kw = d["location"].strip() if d["location"] else ""
+            combined_kw = " ".join(filter(None, [kw, loc_kw, pos_kw]))
 
             if combined_kw:
                 cands = hs_search(token, "p243432503_job", combined_kw, ["job_name","hs_object_id"], limit=100)
-                # 両方含むものを優先してソート
                 co_l  = kw.lower()
+                loc_l = loc_kw.lower()
                 pos_l = pos_kw.lower()
                 def relevance(c):
                     jn = c["properties"].get("job_name","").lower()
                     score = 0
-                    if co_l and co_l in jn:  score -= 10
+                    if co_l  and co_l  in jn: score -= 10
+                    if loc_l and loc_l in jn: score -= 10
                     if pos_l and pos_l in jn: score -= 20
-                    if co_l in jn and pos_l and pos_l in jn: score -= 30
+                    # 全て含む場合が最高
+                    if co_l in jn and loc_l and loc_l in jn and pos_l and pos_l in jn: score -= 20
                     return score
                 cands = sorted(cands, key=relevance)
             else:
