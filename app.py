@@ -157,16 +157,6 @@ def main():
     st.divider()
 
     # ── 追加入力（AIで取れない情報） ─────────────────────
-    col1, col2 = st.columns(2)
-    with col1:
-        channel = st.selectbox("流入チャネル", CHANNELS)
-        oubobi  = st.date_input("応募日", value=date.today())
-    with col2:
-        kibou_default = extracted.get("kibou","東京")
-        kibou_default = kibou_default.replace("都","").replace("道","").replace("府","").replace("県","") if kibou_default else "東京"
-        kidx = PREFS.index(kibou_default) if kibou_default in PREFS else 0
-        kibou = st.selectbox("希望勤務地", PREFS, index=kidx)
-
     st.divider()
 
     # ── アライアンス ──────────────────────────────────────
@@ -184,7 +174,7 @@ def main():
         cols = st.columns([3,2,2])
         with cols[0]: co  = st.text_input(f"会社名 {i+1}（部分入力でOK）", key=f"co_{i}")
         with cols[1]: loc = st.selectbox(f"勤務地 {i+1}", PREFS, key=f"loc_{i}")
-        with cols[2]: pos = st.text_input(f"出張等 {i+1}", placeholder="出張/店舗", key=f"pos_{i}")
+        with cols[2]: pos = st.text_input(f"ポジション名 {i+1}", placeholder="営業職/出張 など", key=f"pos_{i}")
         deals_in.append({"company":co,"location":loc,"position":pos})
 
     st.divider()
@@ -228,6 +218,9 @@ def main():
             try: keiken_num = int(str(keiken_num))
             except: keiken_num = 1
 
+            # 希望勤務地は取引1の勤務地を使用
+            kibou = deals_in[0]["location"] if deals_in else "東京"
+
             props = {
                 "lastname":      ln,
                 "firstname":     fn,
@@ -243,8 +236,8 @@ def main():
                 "genshoku":      extracted.get("genshoku") or "",
                 "keiken_syasuu": f"{keiken_num}社",
                 "kiboukinmuchi": kibou,
-                "ryunyu_chanel": channel,
-                "oubobi":        ms(oubobi),
+                "ryunyu_chanel": "アライアンス",
+                "oubobi":        ms(date.today()),
                 "hs_lead_status":"推薦",
                 "rank":          "D",
                 "hubspot_owner_id": oid,
