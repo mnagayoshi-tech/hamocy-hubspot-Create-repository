@@ -80,33 +80,48 @@ def hs_search(token, obj, keyword, props=["name","hs_object_id"], limit=100):
         return []
     return r.json().get("results",[])
 
-def hs_search_job(token, keyword, limit=100):
-    """求人をjob_nameプロパティで直接検索（フルテキスト検索非対応のため）"""
-    props = ["job_name","hs_object_id"]
-    # CONTAINS_TOKENで部分一致検索
-    r = requests.post("https://api.hubapi.com/crm/v3/objects/p243432503_job/search",
-        json={
-            "filterGroups": [{"filters": [{
-                "propertyName": "job_name",
-                "operator": "CONTAINS_TOKEN",
-                "value": keyword
-            }]}],
-            "properties": props,
-            "limit": limit
-        },
-        headers=hdr(token))
-    if r.ok:
-        results = r.json().get("results",[])
-        if results:
-            return results
-    # フォールバック: queryで再試行
-    r2 = requests.post("https://api.hubapi.com/crm/v3/objects/p243432503_job/search",
-        json={"query": keyword, "properties": props, "limit": limit},
-        headers=hdr(token))
-    if not r2.ok:
-        st.warning(f"🔴 求人検索エラー: {r2.status_code} - {r2.text[:200]}")
+def search_by_tokens(token, obj, prop, keyword, props, limit=100):
+    """キーワードをトークンに分割してCONTAINS_TOKENで検索し結果をマージ"""
+    # 全角・半角スペースで分割、空文字除去
+    tokens = [t for t in keyword.replace("　"," ").split() if t]
+    if not tokens:
         return []
-    return r2.json().get("results",[])
+    seen = {}
+    for tok in tokens:
+        r = requests.post(f"https://api.hubapi.com/crm/v3/objects/{obj}/search",
+            json={"filterGroups":[{"filters":[{"propertyName":prop,"operator":"CONTAINS_TOKEN","value":tok}]}],
+                  "properties":props,"limit":limit},
+            headers=hdr(token))
+        if r.ok:
+            for item in r.json().get("results",[]):
+                cid = item["id"]
+                if cid not in seen:
+                    seen[cid] = {"item": item, "score": 0}
+                seen[cid]["score"] += 1  # マッチしたトークン数をスコアに
+    # スコア降順（多くのトークンにマッチしたものが上位）
+    return [v["item"] for v in sorted(seen.values(), key=lambda x: -x["score"])]
+
+def hs_search_alliance(token, keyword, limit=30):
+    results = search_by_tokens(token, "p243432503_alliance", "name", keyword,
+                               ["name","hs_object_id"], limit)
+    if not results:
+        # フォールバック: queryで再試行
+        results = hs_search(token, "p243432503_alliance", keyword, ["name","hs_object_id"], limit)
+    return results
+
+def hs_search_job(token, keyword, limit=100):
+    results = search_by_tokens(token, "p243432503_job", "job_name", keyword,
+                               ["job_name","hs_object_id"], limit)
+    if not results:
+        # フォールバック: queryで再試行
+        r2 = requests.post("https://api.hubapi.com/crm/v3/objects/p243432503_job/search",
+            json={"query": keyword, "properties": ["job_name","hs_object_id"], "limit": limit},
+            headers=hdr(token))
+        if r2.ok:
+            results = r2.json().get("results",[])
+        else:
+            st.warning(f"🔴 求人検索エラー: {r2.status_code}")
+    return results
 
 def upsert_contact(token, props, eid=None):
     if eid:
@@ -240,7 +255,7 @@ def main():
                 def normalize(s):
                     return s.replace("・","").replace("　","").replace(" ","").replace("株式会社","").lower()
                 al_norm = normalize(alliance_input) if alliance_input else ""
-                al_results = hs_search(token, "p243432503_alliance", alliance_input, ["name","hs_object_id"], limit=30) if alliance_input else []
+                al_results = hs_search_alliance(token, alliance_input) if alliance_input else []
                 # 正規化した名前でソート
                 if al_results:
                     al_results.sort(key=lambda c: 0 if normalize(c["properties"].get("name","")) == al_norm
