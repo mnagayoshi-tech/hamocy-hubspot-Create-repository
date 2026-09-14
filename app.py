@@ -412,143 +412,148 @@ def main():
             st.json(ex)
 
         st.divider()
+        st.divider()
 
         # ── STEP2: 登録実行 ──────────────────────
+        # 登録ボタン押下でフラグをセット
         if st.button("✅ 登録実行", type="primary", use_container_width=True):
+            st.session_state.do_register   = True
+            st.session_state.confirm_existing = None
+            st.session_state.found_contact  = None
+            st.rerun()
+
+        # 登録フロー（ボタン外で実行）
+        if st.session_state.get("do_register"):
+            ex = st.session_state.extracted
             ln = ex.get("lastname","")
             fn = ex.get("firstname","")
-            # 既存コンタクト確認ステート初期化
-            if "confirm_existing" not in st.session_state:
-                st.session_state.confirm_existing = None  # None / "update" / "new"
 
             if not ln or not fn:
                 st.error("氏名が読み取れませんでした")
-                return
-
-            # 既存コンタクト検索（確認待ち状態でなければ実行）
-            if st.session_state.confirm_existing is None:
-                existing = hs_search(token,"contacts",f"{ln} {fn}",["firstname","lastname","email"])
-                eid_found = existing[0] if existing else None
+                st.session_state.do_register = False
             else:
-                eid_found = st.session_state.get("found_contact")
-
-            # 既存コンタクトが見つかった場合、確認ダイアログを表示
-            if eid_found and st.session_state.confirm_existing is None:
-                st.session_state.found_contact = eid_found
-                ex_name = f"{eid_found['properties'].get('lastname','')} {eid_found['properties'].get('firstname','')}".strip()
-                ex_email = eid_found['properties'].get('email','')
-                st.warning(f"⚠️ **{ex_name}**（{ex_email}）のコンタクトが見つかりました。")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("✏️ 既存コンタクトを更新", use_container_width=True, type="primary"):
-                        st.session_state.confirm_existing = "update"
-                        st.rerun()
-                with col2:
-                    if st.button("➕ 新規コンタクトとして作成", use_container_width=True):
-                        st.session_state.confirm_existing = "new"
-                        st.rerun()
-                return  # ユーザーの選択を待つ
-
-            # 確認結果を取得
-            if st.session_state.confirm_existing == "update":
-                eid = st.session_state.found_contact["id"]
-            else:
-                eid = None  # 新規作成
-
-            with st.spinner("HubSpotに登録中..."):
-                bd_str = ex.get("birthdate")
-                try:   bd = date.fromisoformat(bd_str)
-                except: bd = None
-                age_val = str(calc_age(bd)) if bd else ""
-
-                kibou = (st.session_state.deals_snapshot or deals_in)[0]["location"] if deals_in else "東京"
-                keiken_num = ex.get("keiken") or 1
-                try: keiken_num = int(str(keiken_num))
-                except: keiken_num = 1
-
-                props = {
-                    "lastname":         ln,
-                    "firstname":        fn,
-                    "furigana":         ex.get("furigana") or "",
-                    "mobilephone":      ex.get("phone") or "",
-                    "email":            ex.get("email") or "",
-                    "state":            ex.get("state") or "",
-                    "seinengappi":      ms(bd) if bd else "",
-                    "date_of_birth":    ms(bd) if bd else "",
-                    "age":              age_val,
-                    "saisyuu_gakureki": ex.get("gakureki") or "",
-                    "syusshin":         ex.get("syusshin") or "",
-                    "genshoku":         ex.get("genshoku") or "",
-                    "keiken_syasuu":    f"{keiken_num}社",
-                    "kiboukinmuchi":    kibou,
-                    "ryunyu_chanel":    "アライアンス",
-                    "oubobi":           ms(date.today()),
-                    "hs_lead_status":   "推薦",
-                    "rank":             "D",
-                    "hubspot_owner_id": oid,
-                    "alaiancekigyou":   selected_alliance_name,
-                }
-                props = {k:v for k,v in props.items() if v}
-
-                cid, ok = upsert_contact(token, props, eid)
-                if not cid:
-                    st.error("コンタクト登録に失敗しました")
-                    return
-
-                action = "更新" if eid else "新規作成"
-                st.success(f"✅ コンタクト{action} (ID:{cid})")
-
-                if selected_alliance_id:
-                    ok2 = assoc_contact_alliance(token, cid, selected_alliance_id)
-                    if ok2:
-                        st.success("✅ コンタクト-アライアンス紐付け完了")
+                # 既存コンタクト検索（未検索の場合のみ）
+                if st.session_state.get("found_contact") is None and st.session_state.confirm_existing is None:
+                    existing = hs_search(token,"contacts",f"{ln} {fn}",["firstname","lastname","email"])
+                    if existing:
+                        st.session_state.found_contact = existing[0]
                     else:
-                        st.warning("⚠️ コンタクト-アライアンス紐付け失敗")
+                        st.session_state.found_contact = False  # 見つからなかった
 
-                snap = st.session_state.get("deals_snapshot", deals_in)
-                for i, d in enumerate(snap):
-                    if not d["company"]: continue
-                    co_res = hs_search(token,"companies", d["company"])
-                    co_id  = co_res[0]["id"] if co_res else None
-                    job_id = st.session_state.selected_job_ids.get(i)
+                # 確認ダイアログ
+                fc = st.session_state.get("found_contact")
+                if fc and st.session_state.confirm_existing is None:
+                    ex_name  = f"{fc['properties'].get('lastname','')} {fc['properties'].get('firstname','')}".strip()
+                    ex_email = fc['properties'].get('email','')
+                    st.warning(f"⚠️ **{ex_name}**（{ex_email}）のコンタクトが見つかりました。")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✏️ 既存コンタクトを更新", use_container_width=True, type="primary"):
+                            st.session_state.confirm_existing = "update"
+                            st.rerun()
+                    with col2:
+                        if st.button("➕ 新規コンタクトとして作成", use_container_width=True):
+                            st.session_state.confirm_existing = "new"
+                            st.rerun()
+                else:
+                    # 確認済み or 既存なし → 登録実行
+                    if st.session_state.confirm_existing == "update" and fc:
+                        eid = fc["id"]
+                    else:
+                        eid = None
 
-                    # 取引名：求人が選択されていれば求人名から生成
-                    if job_id:
-                        # 選択された求人名を取得
-                        cache = st.session_state.job_search_cache.get(i, [])
-                        job_name = next((c["properties"].get("job_name","") for c in cache
-                                        if c["id"] == job_id), "")
-                        if job_name and "】" in job_name:
-                            # 【会社名】ポジション → 【会社名】勤務地_ポジション
-                            bracket_end = job_name.index("】") + 1
-                            company_part = job_name[:bracket_end]
-                            position_part = job_name[bracket_end:].strip()
-                            deal_name = f"{company_part}{d['location']}_{position_part}"
+                    with st.spinner("HubSpotに登録中..."):
+                        bd_str = ex.get("birthdate")
+                        try:   bd = date.fromisoformat(bd_str)
+                        except: bd = None
+                        age_val = str(calc_age(bd)) if bd else ""
+
+                        kibou = (st.session_state.deals_snapshot or deals_in)[0]["location"] if deals_in else "東京"
+                        keiken_num = ex.get("keiken") or 1
+                        try: keiken_num = int(str(keiken_num))
+                        except: keiken_num = 1
+
+                        props = {
+                            "lastname":         ln,
+                            "firstname":        fn,
+                            "furigana":         ex.get("furigana") or "",
+                            "mobilephone":      ex.get("phone") or "",
+                            "email":            ex.get("email") or "",
+                            "state":            ex.get("state") or "",
+                            "seinengappi":      ms(bd) if bd else "",
+                            "date_of_birth":    ms(bd) if bd else "",
+                            "age":              age_val,
+                            "saisyuu_gakureki": ex.get("gakureki") or "",
+                            "syusshin":         ex.get("syusshin") or "",
+                            "genshoku":         ex.get("genshoku") or "",
+                            "keiken_syasuu":    f"{keiken_num}社",
+                            "kiboukinmuchi":    kibou,
+                            "ryunyu_chanel":    "アライアンス",
+                            "oubobi":           ms(date.today()),
+                            "hs_lead_status":   "推薦",
+                            "rank":             "D",
+                            "hubspot_owner_id": oid,
+                            "alaiancekigyou":   selected_alliance_name,
+                        }
+                        props = {k:v for k,v in props.items() if v}
+
+                        cid, ok = upsert_contact(token, props, eid)
+                        if not cid:
+                            st.error("コンタクト登録に失敗しました")
                         else:
-                            deal_name = job_name or "/".join(filter(None,[d["company"],d["location"],d["position"]]))
-                    else:
-                        # 求人未選択時は従来フォーマット
-                        parts = [d["company"], d["location"]]
-                        if d["position"]: parts.append(d["position"])
-                        deal_name = "/".join(parts)
-                    dr  = make_deal(token, deal_name, cid, co_id, selected_alliance_id, job_id, oid)
-                    did = dr.get("id")
-                    if did:
-                        url = f"https://app.hubspot.com/contacts/{PORTAL_ID}/record/0-3/{did}"
-                        st.success(f"✅ 取引: [{deal_name}]({url})")
-                    else:
-                        st.error(f"取引{i+1}エラー: {dr}")
+                            action = "更新" if eid else "新規作成"
+                            st.success(f"✅ コンタクト{action} (ID:{cid})")
 
-                st.link_button("🔗 コンタクトをHubSpotで確認",
-                               f"https://app.hubspot.com/contacts/{PORTAL_ID}/record/0-1/{cid}")
-                st.session_state.extracted           = {}
-                st.session_state.job_candidates      = {}
-                st.session_state.alliance_candidates = []
-                st.session_state.selected_job_ids   = {}
-                st.session_state.job_search_cache   = {}
-                st.session_state.num_deals          = 1
-                st.session_state.confirm_existing   = None
-                st.session_state.found_contact      = None
+                            if selected_alliance_id:
+                                ok2 = assoc_contact_alliance(token, cid, selected_alliance_id)
+                                if ok2:
+                                    st.success("✅ コンタクト-アライアンス紐付け完了")
+                                else:
+                                    st.warning("⚠️ コンタクト-アライアンス紐付け失敗")
+
+                            snap = st.session_state.get("deals_snapshot", deals_in)
+                            for i, d in enumerate(snap):
+                                if not d["company"]: continue
+                                co_res = hs_search(token,"companies", d["company"])
+                                co_id  = co_res[0]["id"] if co_res else None
+                                job_id = st.session_state.selected_job_ids.get(i)
+
+                                if job_id:
+                                    cache = st.session_state.job_search_cache.get(i, [])
+                                    job_name = next((c["properties"].get("job_name","") for c in cache if c["id"] == job_id), "")
+                                    if job_name and "】" in job_name:
+                                        bracket_end = job_name.index("】") + 1
+                                        company_part = job_name[:bracket_end]
+                                        position_part = job_name[bracket_end:].strip()
+                                        deal_name = f"{company_part}{d['location']}_{position_part}"
+                                    else:
+                                        deal_name = job_name or "/".join(filter(None,[d["company"],d["location"],d["position"]]))
+                                else:
+                                    parts = [d["company"], d["location"]]
+                                    if d["position"]: parts.append(d["position"])
+                                    deal_name = "/".join(parts)
+
+                                dr  = make_deal(token, deal_name, cid, co_id, selected_alliance_id, job_id, oid)
+                                did = dr.get("id")
+                                if did:
+                                    url = f"https://app.hubspot.com/contacts/{PORTAL_ID}/record/0-3/{did}"
+                                    st.success(f"✅ 取引: [{deal_name}]({url})")
+                                else:
+                                    st.error(f"取引{i+1}エラー: {dr}")
+
+                            st.link_button("🔗 コンタクトをHubSpotで確認",
+                                           f"https://app.hubspot.com/contacts/{PORTAL_ID}/record/0-1/{cid}")
+
+                            # リセット
+                            st.session_state.extracted           = {}
+                            st.session_state.job_candidates      = {}
+                            st.session_state.alliance_candidates = []
+                            st.session_state.selected_job_ids   = {}
+                            st.session_state.job_search_cache   = {}
+                            st.session_state.num_deals          = 1
+                            st.session_state.confirm_existing   = None
+                            st.session_state.found_contact      = None
+                            st.session_state.do_register        = False
 
 if __name__ == "__main__":
     main()
