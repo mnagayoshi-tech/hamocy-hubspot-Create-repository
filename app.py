@@ -191,7 +191,7 @@ def main():
         st.query_params["owner"] = selected_owner
         oid = OWNERS[selected_owner]
         st.caption(f"担当者ID: {oid}")
-        st.caption(f"🔖担当者を自分に設定した上でこのページをブックマーク登録すると次回から自分が自動選択されます")
+        st.caption(f"🔖 このURLをブックマーク登録すると次回自動選択されます")
 
     # タイトル（サイドバー後に表示）
     st.title("🏢 アライアンス先求職者登録")
@@ -417,19 +417,49 @@ def main():
         if st.button("✅ 登録実行", type="primary", use_container_width=True):
             ln = ex.get("lastname","")
             fn = ex.get("firstname","")
+            # 既存コンタクト確認ステート初期化
+            if "confirm_existing" not in st.session_state:
+                st.session_state.confirm_existing = None  # None / "update" / "new"
+
             if not ln or not fn:
                 st.error("氏名が読み取れませんでした")
                 return
+
+            # 既存コンタクト検索（確認待ち状態でなければ実行）
+            if st.session_state.confirm_existing is None:
+                existing = hs_search(token,"contacts",f"{ln} {fn}",["firstname","lastname","email"])
+                eid_found = existing[0] if existing else None
+            else:
+                eid_found = st.session_state.get("found_contact")
+
+            # 既存コンタクトが見つかった場合、確認ダイアログを表示
+            if eid_found and st.session_state.confirm_existing is None:
+                st.session_state.found_contact = eid_found
+                ex_name = f"{eid_found['properties'].get('lastname','')} {eid_found['properties'].get('firstname','')}".strip()
+                ex_email = eid_found['properties'].get('email','')
+                st.warning(f"⚠️ **{ex_name}**（{ex_email}）のコンタクトが見つかりました。")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✏️ 既存コンタクトを更新", use_container_width=True, type="primary"):
+                        st.session_state.confirm_existing = "update"
+                        st.rerun()
+                with col2:
+                    if st.button("➕ 新規コンタクトとして作成", use_container_width=True):
+                        st.session_state.confirm_existing = "new"
+                        st.rerun()
+                return  # ユーザーの選択を待つ
+
+            # 確認結果を取得
+            if st.session_state.confirm_existing == "update":
+                eid = st.session_state.found_contact["id"]
+            else:
+                eid = None  # 新規作成
 
             with st.spinner("HubSpotに登録中..."):
                 bd_str = ex.get("birthdate")
                 try:   bd = date.fromisoformat(bd_str)
                 except: bd = None
                 age_val = str(calc_age(bd)) if bd else ""
-
-                existing = hs_search(token,"contacts",f"{ln} {fn}",["firstname","lastname","email"])
-                eid = existing[0]["id"] if existing else None
-                if eid: st.warning(f"⚠️ 既存コンタクト (ID:{eid}) → 更新します")
 
                 kibou = (st.session_state.deals_snapshot or deals_in)[0]["location"] if deals_in else "東京"
                 keiken_num = ex.get("keiken") or 1
@@ -517,6 +547,8 @@ def main():
                 st.session_state.selected_job_ids   = {}
                 st.session_state.job_search_cache   = {}
                 st.session_state.num_deals          = 1
+                st.session_state.confirm_existing   = None
+                st.session_state.found_contact      = None
 
 if __name__ == "__main__":
     main()
