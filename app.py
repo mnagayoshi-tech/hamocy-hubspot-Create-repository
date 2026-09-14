@@ -127,10 +127,11 @@ def upsert_contact(token, props, eid=None):
     if eid:
         r = requests.patch(f"https://api.hubapi.com/crm/v3/objects/contacts/{eid}",
             json={"properties":props}, headers=hdr(token))
-        return eid, r.ok
+        return (eid if r.ok else None), r.json()
     r = requests.post("https://api.hubapi.com/crm/v3/objects/contacts",
         json={"properties":props}, headers=hdr(token))
-    d = r.json(); return d.get("id"), r.ok
+    d = r.json()
+    return d.get("id"), d
 
 def assoc_contact_alliance(token, cid, aid):
     r = requests.put(
@@ -499,7 +500,8 @@ def main():
 
                         cid, ok = upsert_contact(token, props, eid)
                         if not cid:
-                            st.error("コンタクト登録に失敗しました")
+                            st.error(f"コンタクト登録に失敗しました: {ok}")
+                            st.json(props)
                         else:
                             action = "更新" if eid else "新規作成"
                             st.success(f"✅ コンタクト{action} (ID:{cid})")
